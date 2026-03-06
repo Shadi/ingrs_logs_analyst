@@ -51,10 +51,11 @@ jobs:
   docker:
     needs: [test, build]
     runs-on: ubuntu-latest
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/ingrs_logs_analyst
     steps:
       - uses: actions/checkout@v4
+      - name: Set image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ingrs_logs_analyst" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -70,5 +71,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ steps.sha.outputs.short }}
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.sha.outputs.short }}
