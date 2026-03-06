@@ -33,6 +33,22 @@ go run . --ipdb IP2LOCATION-DB11.BIN
 go run . --source file --file access.log --ipdb IP2LOCATION-DB11.BIN
 ```
 
+### Install
+
+```sh
+go install github.com/shadi/ingrs_logs_analyst@latest
+```
+
+Then run it directly:
+
+```sh
+# from k8s (default)
+ingrs_logs_analyst --ipdb IP2LOCATION-DB11.BIN
+
+# from a log file
+ingrs_logs_analyst --source file --file access.log --ipdb IP2LOCATION-DB11.BIN
+```
+
 ### Podman
 
 ```sh
