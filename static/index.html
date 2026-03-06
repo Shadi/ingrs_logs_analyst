@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Log Explorer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f4f4f9;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2 {
+            color: #2c3e50;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #eef2f7;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            background: #e0e6ed;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f5f5f5;
+            cursor: pointer;
+        }
+
+        .nav-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .back-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .back-btn:hover {
+            background: #2980b9;
+        }
+
+        .back-btn.secondary {
+            background: #95a5a6;
+        }
+
+        .back-btn.secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .clickable {
+            color: #3498db;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .ip-info-box {
+            background: #eef2f7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .ip-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ip-info-label {
+            font-size: 0.8em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+
+        .ip-info-value {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Nginx Log Explorer</h1>
+
+        <div id="loading">Loading stats...</div>
+
+        <!-- Home -->
+        <div id="dashboard" class="section">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-requests">-</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+                <!-- Add status code shortcuts -->
+                <div class="stat-card" onclick="showStatusDetails('2xx')">
+                    <div class="stat-number" style="color: #27ae60">2xx</div>
+                    <div class="stat-label">Success</div>
+                </div>
+                <div class="stat-card" onclick="showStatusDetails('3xx')">
+                    <div class="stat-number" style="color: #f39c12">3xx</div>
+                    <div class="stat-label">Redirects</div>
+                </div>
+                <div class="stat-card" onclick="showStatusDetails('4xx')">
+                    <div class="stat-number" style="color: #e74c3c">4xx</div>
+                    <div class="stat-label">Client Errors</div>
+                </div>
+                <div class="stat-card" onclick="showStatusDetails('5xx')">
+                    <div class="stat-number" style="color: #c0392b">5xx</div>
+                    <div class="stat-label">Server Errors</div>
+                </div>
+            </div>
+
+            <h2>Most Visited Sites</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site (VHost)</th>
+                        <th>Requests</th>
+                    </tr>
+                </thead>
+                <tbody id="top-sites-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Site Details View -->
+        <div id="site-details" class="section hidden">
+            <div class="nav-bar">
+                <div class="back-btn" onclick="goBack()">← Back</div>
+                <div class="back-btn secondary" onclick="showHome()">Home</div>
+            </div>
+            <h2 id="site-details-title">Site Details</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Path</th>
+                        <th>Requests</th>
+                    </tr>
+                </thead>
+                <tbody id="site-details-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Path Details View -->
+        <div id="path-details" class="section hidden">
+            <div class="nav-bar">
+                <div class="back-btn" onclick="goBack()">← Back</div>
+                <div class="back-btn secondary" onclick="showHome()">Home</div>
+            </div>
+            <h2 id="path-details-title">Path Details</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Country</th>
+                        <th>ISP</th>
+                        <th>Requests</th>
+                    </tr>
+                </thead>
+                <tbody id="path-details-body"></tbody>
+            </table>
+        </div>
+
+        <!-- IP Details View -->
+        <div id="ip-details" class="section hidden">
+            <div class="nav-bar">
+                <div class="back-btn" onclick="goBack()">← Back</div>
+                <div class="back-btn secondary" onclick="showHome()">Home</div>
+            </div>
+            <h2 id="ip-details-title">IP Details</h2>
+
+            <div id="ip-info-container" class="ip-info-box">
+                <div class="ip-info-item"><span class="ip-info-label">Country</span><span class="ip-info-value"
+                        id="ip-info-country">-</span></div>
+                <div class="ip-info-item"><span class="ip-info-label">Region</span><span class="ip-info-value"
+                        id="ip-info-region">-</span></div>
+                <div class="ip-info-item"><span class="ip-info-label">City</span><span class="ip-info-value"
+                        id="ip-info-city">-</span></div>
+                <div class="ip-info-item"><span class="ip-info-label">ISP</span><span class="ip-info-value"
+                        id="ip-info-isp">-</span></div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Path Visited</th>
+                        <th>Request Count</th>
+                        <th>Last Visit</th>
+                    </tr>
+                </thead>
+                <tbody id="ip-details-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Status Details View -->
+        <div id="status-details" class="section hidden">
+            <div class="nav-bar">
+                <div class="back-btn" onclick="goBack()">← Back</div>
+                <div class="back-btn secondary" onclick="showHome()">Home</div>
+            </div>
+            <h2 id="status-details-title">Status Details</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>IP</th>
+                        <th>Country</th>
+                        <th>Path</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="status-details-body"></tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <script>
+        // Navigation history stack - each entry is a function that re-renders the view
+        let navHistory = [];
+
+        function pushNav(fn) {
+            navHistory.push(fn);
+        }
+
+        function goBack() {
+            if (navHistory.length > 1) {
+                navHistory.pop(); // remove current
+                const prev = navHistory[navHistory.length - 1];
+                // temporarily remove the entry so the re-call can push it back
+                navHistory.pop();
+                prev();
+            } else {
+                showHome();
+            }
+        }
+
+        // Load initial stats
+        function loadStats() {
+            fetch('/api/stats')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('total-requests').textContent = data.TotalRequests;
+
+                    const tbody = document.getElementById('top-sites-body');
+                    tbody.innerHTML = '';
+                    data.TopSites.forEach(s => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="clickable" onclick="showSiteDetails('${s.site}')">${s.site}</td>
+                            <td>${s.count}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+        loadStats();
+
+        function showHome() {
+            navHistory = [];
+            pushNav(showHome);
+            hideAll();
+            document.getElementById('dashboard').classList.remove('hidden');
+        }
+
+        function hideAll() {
+            ['dashboard', 'site-details', 'path-details', 'ip-details', 'status-details'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+
+        let currentSite = '';
+
+        function showSiteDetails(site) {
+            pushNav(() => showSiteDetails(site));
+            hideAll();
+            currentSite = site;
+            document.getElementById('site-details').classList.remove('hidden');
+            document.getElementById('site-details-title').textContent = 'Paths for Site: ' + site;
+
+            fetch(`/api/site?site=${encodeURIComponent(site)}`)
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('site-details-body');
+                    tbody.innerHTML = '';
+                    if (!data) return;
+                    data.forEach(p => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="clickable" onclick="showPathDetails('${p.path}')">${p.path}</td>
+                            <td>${p.count}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+
+        function showPathDetails(path) {
+            pushNav(() => showPathDetails(path));
+            hideAll();
+            document.getElementById('path-details').classList.remove('hidden');
+            document.getElementById('path-details-title').textContent = 'Visitors to: ' + path + (currentSite ? ' (on ' + currentSite + ')' : '');
+
+            fetch(`/api/path?site=${encodeURIComponent(currentSite)}&path=${encodeURIComponent(path)}`)
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('path-details-body');
+                    tbody.innerHTML = '';
+                    if (!data) return;
+                    data.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="clickable" onclick="showIPDetails('${item.ip}')">${item.ip}</td>
+                            <td>${item.location.country}</td>
+                            <td>${item.location.isp}</td>
+                            <td>${item.count}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+
+        function showIPDetails(ip) {
+            pushNav(() => showIPDetails(ip));
+            hideAll();
+            document.getElementById('ip-details').classList.remove('hidden');
+            document.getElementById('ip-details-title').textContent = 'Activity for IP: ' + ip;
+
+            fetch(`/api/ip?ip=${encodeURIComponent(ip)}`)
+                .then(res => res.json())
+                .then(data => {
+                    // Update header
+                    document.getElementById('ip-info-country').textContent = data.location.country;
+                    document.getElementById('ip-info-region').textContent = data.location.region;
+                    document.getElementById('ip-info-city').textContent = data.location.city;
+                    document.getElementById('ip-info-isp').textContent = data.location.isp;
+
+                    const tbody = document.getElementById('ip-details-body');
+                    tbody.innerHTML = '';
+                    if (!data.paths) return;
+                    data.paths.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="clickable" onclick="showPathDetails('${item.path}')">${item.path}</td>
+                            <td>${item.count}</td>
+                            <td>${new Date(item.last_time).toLocaleString()}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+
+        function showStatusDetails(code, ip) {
+            pushNav(() => showStatusDetails(code, ip));
+            hideAll();
+            document.getElementById('status-details').classList.remove('hidden');
+
+            const title = document.getElementById('status-details-title');
+            const tbody = document.getElementById('status-details-body');
+            const thead = tbody.previousElementSibling.querySelector('tr');
+
+            if (!ip) {
+                title.textContent = 'IPs with Status: ' + code;
+                thead.innerHTML = `
+                    <th>IP</th>
+                    <th>Country</th>
+                    <th>ISP</th>
+                    <th>Requests</th>
+                `;
+
+                fetch(`/api/status?code=${code}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        tbody.innerHTML = '';
+                        if (!data) return;
+                        data.forEach(item => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td class="clickable" onclick="showStatusDetails('${code}', '${item.ip}')">${item.ip}</td>
+                                <td>${item.location.country}</td>
+                                <td>${item.location.isp}</td>
+                                <td>${item.count}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    });
+            } else {
+                title.innerHTML = `Status ${code} Details for IP: <span class="clickable" onclick="showIPDetails('${ip}')">${ip}</span>`;
+                thead.innerHTML = `
+                    <th>Time</th>
+                    <th>Path</th>
+                    <th>Status</th>
+                `;
+
+                fetch(`/api/status?code=${code}&ip=${encodeURIComponent(ip)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        tbody.innerHTML = '';
+                        if (!data) return;
+                        data.forEach(item => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td>${item.time}</td>
+                                <td class="clickable" onclick="showPathDetails('${item.path}')">${item.path}</td>
+                                <td>${item.status}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    });
+            }
+        }
+    </script>
+</body>
+
+</html>
