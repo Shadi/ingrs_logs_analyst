@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"sort"
 	"strconv"
 
 	"github.com/shadi/ingrs_logs_analyst/parser"
@@ -11,16 +10,6 @@ import (
 
 type Server struct {
 	data *parser.LogData
-}
-
-type SiteCount struct {
-	Site  string `json:"site"`
-	Count int    `json:"count"`
-}
-
-type PathCount struct {
-	Path  string `json:"path"`
-	Count int    `json:"count"`
 }
 
 func New(data *parser.LogData) *Server {
@@ -38,212 +27,61 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("/", fs)
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	siteCounts := make(map[string]int)
-	for _, l := range s.data.Entries {
-		site := l.VHost
-		if site == "" {
-			site = "default"
-		}
-		siteCounts[site]++
-	}
-
-	var topSites []SiteCount
-	for si, c := range siteCounts {
-		topSites = append(topSites, SiteCount{Site: si, Count: c})
-	}
-
-	sort.Slice(topSites, func(i, j int) bool {
-		return topSites[i].Count > topSites[j].Count
-	})
-
-	response := struct {
-		TotalRequests int         `json:"TotalRequests"`
-		TopSites      []SiteCount `json:"TopSites"`
-	}{
-		TotalRequests: len(s.data.Entries),
-		TopSites:      topSites,
-	}
-
+func jsonResponse(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	jsonResponse(w, struct {
+		TotalRequests int                `json:"TotalRequests"`
+		TopSites      []parser.SiteCount `json:"TopSites"`
+	}{
+		TotalRequests: s.data.TotalRequests(),
+		TopSites:      s.data.TopSites(),
+	})
 }
 
 func (s *Server) handleSitePaths(w http.ResponseWriter, r *http.Request) {
 	site := r.URL.Query().Get("site")
-
-	pathCounts := make(map[string]int)
-	for _, l := range s.data.Entries {
-		lSite := l.VHost
-		if lSite == "" {
-			lSite = "default"
-		}
-		if lSite == site {
-			pathCounts[l.Path]++
-		}
-	}
-
-	var topPaths []PathCount
-	for p, c := range pathCounts {
-		topPaths = append(topPaths, PathCount{Path: p, Count: c})
-	}
-
-	sort.Slice(topPaths, func(i, j int) bool {
-		return topPaths[i].Count > topPaths[j].Count
-	})
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(topPaths)
+	jsonResponse(w, s.data.SitePaths(site))
 }
 
 func (s *Server) handlePathDetails(w http.ResponseWriter, r *http.Request) {
 	site := r.URL.Query().Get("site")
 	path := r.URL.Query().Get("path")
-
-	type IPInfo struct {
-		IP       string            `json:"ip"`
-		Count    int               `json:"count"`
-		Location parser.IPLocation `json:"location"`
-	}
-
-	ipCounts := make(map[string]int)
-	for _, l := range s.data.Entries {
-		lSite := l.VHost
-		if lSite == "" {
-			lSite = "default"
-		}
-		if (site == "" || lSite == site) && l.Path == path {
-			ip := parser.ExtractIP(l)
-			ipCounts[ip]++
-		}
-	}
-
-	var results []IPInfo
-	for ip, count := range ipCounts {
-		results = append(results, IPInfo{
-			IP:       ip,
-			Count:    count,
-			Location: s.data.GetIPLocation(ip),
-		})
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Count > results[j].Count
-	})
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	jsonResponse(w, s.data.PathIPs(site, path))
 }
 
 func (s *Server) handleIPDetails(w http.ResponseWriter, r *http.Request) {
-	targetIP := r.URL.Query().Get("ip")
-
-	type PathInfo struct {
-		Path  string `json:"path"`
-		Count int    `json:"count"`
-		Time  string `json:"last_time"`
-	}
-
-	response := struct {
+	ip := r.URL.Query().Get("ip")
+	jsonResponse(w, struct {
 		Location parser.IPLocation `json:"location"`
-		Paths    []PathInfo        `json:"paths"`
+		Paths    []parser.PathInfo `json:"paths"`
 	}{
-		Location: s.data.GetIPLocation(targetIP),
-	}
-
-	pathCounts := make(map[string]int)
-	lastTime := make(map[string]string)
-
-	for _, l := range s.data.Entries {
-		ip := parser.ExtractIP(l)
-		if ip == targetIP {
-			pathCounts[l.Path]++
-			lastTime[l.Path] = l.Time
-		}
-	}
-
-	for p, c := range pathCounts {
-		response.Paths = append(response.Paths, PathInfo{Path: p, Count: c, Time: lastTime[p]})
-	}
-
-	sort.Slice(response.Paths, func(i, j int) bool {
-		return response.Paths[i].Count > response.Paths[j].Count
+		Location: s.data.GetIPLocation(ip),
+		Paths:    s.data.IPPaths(ip),
 	})
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
 }
 
 func (s *Server) handleStatusDetails(w http.ResponseWriter, r *http.Request) {
 	codeStr := r.URL.Query().Get("code")
 	targetIP := r.URL.Query().Get("ip")
 
-	type IPStatusSummary struct {
-		IP       string            `json:"ip"`
-		Count    int               `json:"count"`
-		Location parser.IPLocation `json:"location"`
-	}
-
-	type RequestInfo struct {
-		Path   string `json:"path"`
-		Status int    `json:"status"`
-		Time   string `json:"time"`
-	}
-
-	isRange := false
-	var rangeStart, rangeEnd int
+	var statusStart, statusEnd int
 	if len(codeStr) == 3 && codeStr[1:] == "xx" {
-		isRange = true
 		base, _ := strconv.Atoi(string(codeStr[0]))
-		rangeStart = base * 100
-		rangeEnd = rangeStart + 99
-	}
-	targetCode, _ := strconv.Atoi(codeStr)
-
-	matchStatus := func(status int) bool {
-		if isRange {
-			return status >= rangeStart && status <= rangeEnd
-		}
-		return status == targetCode
+		statusStart = base * 100
+		statusEnd = statusStart + 99
+	} else {
+		code, _ := strconv.Atoi(codeStr)
+		statusStart = code
+		statusEnd = code
 	}
 
 	if targetIP == "" {
-		ipCounts := make(map[string]int)
-		for _, l := range s.data.Entries {
-			if matchStatus(l.Status) {
-				ip := parser.ExtractIP(l)
-				ipCounts[ip]++
-			}
-		}
-
-		var results []IPStatusSummary
-		for ip, count := range ipCounts {
-			results = append(results, IPStatusSummary{
-				IP:       ip,
-				Count:    count,
-				Location: s.data.GetIPLocation(ip),
-			})
-		}
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].Count > results[j].Count
-		})
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
-		return
+		jsonResponse(w, s.data.StatusIPs(statusStart, statusEnd))
+	} else {
+		jsonResponse(w, s.data.StatusIPDetails(targetIP, statusStart, statusEnd))
 	}
-
-	var results []RequestInfo
-	for _, l := range s.data.Entries {
-		ip := parser.ExtractIP(l)
-		if ip == targetIP && matchStatus(l.Status) {
-			results = append(results, RequestInfo{
-				Path:   l.Path,
-				Status: l.Status,
-				Time:   l.Time,
-			})
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
 }

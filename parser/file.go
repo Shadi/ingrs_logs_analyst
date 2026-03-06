@@ -12,14 +12,13 @@ type FileLogSource struct {
 	Filename string
 }
 
-func (f *FileLogSource) ReadLogs() ([]LogEntry, error) {
+func (f *FileLogSource) ReadLogs(fn func(LogEntry) error) error {
 	file, err := os.Open(f.Filename)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer file.Close()
 
-	var entries []LogEntry
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var entry LogEntry
@@ -27,7 +26,9 @@ func (f *FileLogSource) ReadLogs() ([]LogEntry, error) {
 			log.Warn().Err(err).Msg("skipping invalid log line")
 			continue
 		}
-		entries = append(entries, entry)
+		if err := fn(entry); err != nil {
+			return err
+		}
 	}
-	return entries, scanner.Err()
+	return scanner.Err()
 }

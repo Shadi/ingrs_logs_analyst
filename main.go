@@ -40,17 +40,20 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to create log source")
 	}
 
-	data := parser.NewLogData()
+	data, err := parser.NewLogData()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize database")
+	}
+	defer data.Close()
 
-	if err := data.LoadFrom(logSource); err != nil {
+	count, err := data.LoadFrom(logSource)
+	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load logs")
 	}
-	log.Info().Int("entries", len(data.Entries)).Msg("loaded log entries")
+	log.Info().Int("entries", count).Msg("loaded log entries")
 
 	if err := data.LoadIPDB(o.IPDB); err != nil {
 		log.Warn().Err(err).Msg("failed to load IP2Location DB, IP info will be limited")
-	} else {
-		defer data.CloseIPDB()
 	}
 
 	srv := server.New(data)
