@@ -18,7 +18,7 @@ Serves a web UI for exploring requests by site, path, IP, and status code with I
 
 ## IP2Location
 
-For mapping IP address to a country the library github.com/ip2location/ip2location-go is used, you can sign up and get a lite DB for free to use it with
+For mapping IP address to a country the library [github.com/ip2location/ip2location-go](https://github.com/ip2location/ip2location-go) is used, you can sign up and get a lite DB for free to use it with
 this program.
 
 ## Running
